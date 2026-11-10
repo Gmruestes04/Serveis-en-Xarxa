@@ -1,1 +1,127 @@
+# Projecte de Consultoria DNS – TechCloud Solutions
+**Client:** Innovació Tecnològica del Maresme S.L.  
+**Tècnic:** Guillem Moreno Ruestes  
+**Data:** Novembre 2026  
 
+---
+
+##  1. Fase Teòrica: Píndola Formativa
+
+* **Recursos utilitzats:** Mapa conceptual de l'arquitectura i resolució DNS.
+
+---
+
+## 2. Fase Pràctica: Auditoria de Resolució de Noms (CLI)
+
+### Configuració de Xarxa de l'Equip
+* **Sistema Operatiu:** Zorin OS / Linux
+* **Interfície 1 (`eth0` / `enp0s3`):** Mode NAT (amb sortida a Internet).
+* **Interfície 2 (`eth1` / `enp0s8`):** Mode Adaptador pont (Bridged) amb IP estàtica.
+![alt text](<DiagnosiDNSImg/Captura de pantalla 2026-11-10 183330.png>)
+![alt text](<DiagnosiDNSImg/Captura de pantalla 2026-11-10 183436.png>)
+
+---
+
+## 🔹 Part A. Diagnosi avançada amb `dig` (Linux/macOS)
+
+### 1. Consulta bàsica de registre A
+```bash
+dig tecnocampus.cat A
+```
+> ![Captura dig A](ruta/a/la/captura-dig-a.png)
+
+* **Anàlisi tècnica:**
+  * **IP de resposta:** `[Afegeix la IP obtinguda, ex: 193.145.54.X]`
+  * **Valor del TTL:** `[Indica el valor en segons]`
+  * **IP del servidor DNS que ha respost:** `[Ex: 127.0.0.53#53 o IP del router]`
+
+---
+
+### 2. Consulta de servidors de noms (NS)
+```bash
+dig tecnocampus.cat NS
+```
+> ![Captura dig NS](ruta/a/la/captura-dig-ns.png)
+
+* **Anàlisi tècnica:**
+  * **Name Servers autoritatius:** Llista dels servidors de noms encarregats directament d'administrar el domini `tecnocampus.cat` *(ex: `a9-66.akam.net`, `a1-64.akam.net`, etc.)*.
+
+---
+
+### 3. Consulta detallada SOA (Start of Authority)
+```bash
+dig tecnocampus.cat SOA
+```
+> ![Captura dig SOA](ruta/a/la/captura-dig-soa.png)
+
+* **Anàlisi tècnica:**
+  * **Correu de l'administrador (`rname`):** `[Ex: hostmaster.tecnocampus.cat. - on el primer punt equival a @]`
+  * **Número de sèrie (`serial`):** `[Ex: 2026111001 - versió del fitxer de zona utilitzada per a la sincronització entre servidors primaris i secundaris]`
+
+---
+
+### 4. Consulta de resolució inversa (PTR)
+```bash
+dig -x <IP_obtinguda_a_la_comanda_1>
+```
+> ![Captura dig PTR](ruta/a/la/captura-dig-ptr.png)
+
+* **Anàlisi tècnica:**
+  * **Nom de domini resolt:** Mostra la correspondència del registre PTR per a la IP indicada.
+  * **Funcionament:** La resolució inversa permet consultar quin nom de domini té assignada una IP determinada mitjançant la jerarquia especial `in-addr.arpa`.
+
+---
+
+## 🔹 Part B. Comprovació de resolució amb `nslookup` (Mode interactiu)
+
+### 1. Consulta bàsica no autoritativa
+```text
+$ nslookup
+> set type=A
+> tecnocampus.cat
+```
+> ![Captura nslookup no autoritatiu](ruta/a/la/captura-nslookup-1.png)
+
+* **Anàlisi tècnica:**
+  * **Resposta:** S'obté l'adreça IP associada al domini.
+  * **Justificació "Non-authoritative answer":** La consola especifica que la resposta és **no autoritativa** perquè prové de la memòria cau (*cache*) del servidor DNS local o intermediari, i no pas del servidor DNS principal que té la zona original del domini.
+
+---
+
+### 2. Consulta autoritativa directa
+```text
+> server <primer_servidor_NS_obtingut>
+> tecnocampus.cat
+> exit
+```
+> ![Captura nslookup autoritatiu](ruta/a/la/captura-nslookup-2.png)
+
+* **Anàlisi tècnica:**
+  * **Comparació:** En consultar directament un dels servidors de noms autoritatius del domini obtinguts a la Part A (ex. servidors d'Akamai), la marca **"Non-authoritative answer" desapareix**.
+  * **Justificació:** La resposta és oficial i directa de la font original que gestiona el domini.
+
+---
+
+## 🔹 Part C. Resolucions locals i protocol mDNS
+
+### 1. Comprovació del Hostname
+```bash
+hostname
+```
+> ![Captura hostname](ruta/a/la/captura-hostname.png)
+
+* **Nom de l'equip local:** `[Ex: zorin-vm]`
+
+---
+
+### 2. Prova de resolució local amb mDNS
+Des d'un altre equip de la mateixa xarxa local / bridged:
+```bash
+ping <hostname>.local
+```
+> ![Captura ping mDNS](ruta/a/la/captura-mdns-ping.png)
+
+* **Anàlisi del protocol mDNS (Multicast DNS):**
+  * **Funcionament:** Permet resoldre noms d'host a adreces IP dins d'una xarxa local sense necessitat de tenir un servidor DNS dedicat o centralitzat. Utilitza missatges en difusió multipunt (*multicast*) cap a l'adreça IP `224.0.0.251` (o `ff02::fb` en IPv6).
+  * **Port utilitzat:** Port de transport **UDP 5353**.
+  * **Avantatges:** Implementa una xarxa de configuració zero (*Zero-configuration networking* / Avahi / Bonjour), facilitant que els equips es trobin entre ells automàticament en entorns domèstics o petites oficines.
